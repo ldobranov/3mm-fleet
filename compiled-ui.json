@@ -1,0 +1,19 @@
+{
+  "compiled_ui_version": 1,
+  "module_id": "org.3mm.fleet",
+  "version": "0.1.0",
+  "entrypoints": [
+    {
+      "entrypoint_id": "fleet",
+      "kind": "route",
+      "source": "source/frontend/FleetApp.vue",
+"label": {
+  "en": "Devices",
+  "translations": {
+    "bg": "Устройства"
+  }
+},
+      "route": "/fleet"
+    }
+  ]
+}
