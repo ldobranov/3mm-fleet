@@ -3,7 +3,7 @@
     <header class="page-header">
       <div>
         <h1>3mm Fleet</h1>
-        <p>Управление на свързаните 3mm устройства</p>
+        <p>{{ t('subtitle') }}</p>
       </div>
 
       <button
@@ -12,7 +12,7 @@
         :disabled="loading"
         @click="refreshAll"
       >
-        {{ loading ? 'Обновяване…' : 'Обнови' }}
+        {{ loading ? t('refreshing') : t('refresh') }}
       </button>
     </header>
 
@@ -23,21 +23,23 @@
     <section class="panel">
       <div class="section-header">
         <div>
-          <h2>Нови устройства</h2>
+          <h2>{{ t('newDevices') }}</h2>
           <p>
-            Node устройства, които чакат одобрение от този Hub.
+            {{ t('pendingHelp') }}
           </p>
         </div>
 
         <span class="counter">{{ pending.length }}</span>
       </div>
 
+      <p v-if="pendingError" class="error-message" role="alert">{{ t('loadFailed') }}</p>
+
       <p v-if="loadingPending && !pending.length" class="empty">
-        Проверка за нови устройства…
+        {{ t('checking') }}
       </p>
 
-      <p v-else-if="!pending.length" class="empty">
-        Няма устройства, чакащи одобрение.
+      <p v-else-if="!pendingError && !pending.length" class="empty">
+        {{ t('noPending') }}
       </p>
 
       <article
@@ -46,13 +48,13 @@
         class="pending-card"
       >
         <div class="device-main">
-          <strong>{{ item.display_name || 'Unnamed device' }}</strong>
+          <strong>{{ item.display_name || t('unnamed') }}</strong>
           <code>{{ item.device_id }}</code>
 
           <div class="device-meta">
             <span>{{ roleLabel(item.role) }}</span>
-            <span>Protocol {{ item.protocol_version }}</span>
-            <span>до {{ formatDate(item.expires_at) }}</span>
+            <span>{{ t('protocol') }} {{ item.protocol_version }}</span>
+            <span>{{ t('until') }} {{ formatDate(item.expires_at) }}</span>
           </div>
         </div>
 
@@ -63,7 +65,7 @@
             :disabled="busyRequest !== null"
             @click="decide(item, 'approve')"
           >
-            Добави устройство
+            {{ t('add') }}
           </button>
 
           <button
@@ -72,7 +74,7 @@
             :disabled="busyRequest !== null"
             @click="decide(item, 'reject')"
           >
-            Отхвърли
+            {{ t('reject') }}
           </button>
         </div>
       </article>
@@ -81,19 +83,21 @@
     <section class="panel">
       <div class="section-header">
         <div>
-          <h2>Устройства</h2>
-          <p>Регистрирани устройства на този Hub.</p>
+          <h2>{{ t('devices') }}</h2>
+          <p>{{ t('devicesHelp') }}</p>
         </div>
 
         <span class="counter">{{ devices.length }}</span>
       </div>
 
+      <p v-if="devicesError" class="error-message" role="alert">{{ t('loadFailed') }}</p>
+
       <p v-if="loadingDevices && !devices.length" class="empty">
-        Зареждане на устройствата…
+        {{ t('loadingDevices') }}
       </p>
 
-      <p v-else-if="!devices.length" class="empty">
-        Все още няма регистрирани устройства.
+      <p v-else-if="!devicesError && !devices.length" class="empty">
+        {{ t('noDevices') }}
       </p>
 
       <div v-else class="device-grid">
@@ -107,12 +111,12 @@
               <div class="device-title-row">
                 <span
                   class="status-dot"
-                  :class="device.online ? 'online' : 'offline'"
+                  :class="deviceStatus(device)"
                   aria-hidden="true"
                 ></span>
 
                 <strong>
-                  {{ device.display_name || inventoryValue(device, 'hostname') || 'Unnamed device' }}
+                  {{ device.display_name || inventoryValue(device, 'hostname') || t('unnamed') }}
                 </strong>
               </div>
 
@@ -121,30 +125,30 @@
 
             <span
               class="status-badge"
-              :class="device.online ? 'online-badge' : 'offline-badge'"
+              :class="deviceStatus(device) + '-badge'"
             >
-              {{ device.online ? 'Online' : 'Offline' }}
+              {{ t(deviceStatus(device)) }}
             </span>
           </div>
 
           <dl class="device-details">
             <div>
-              <dt>Роля</dt>
+              <dt>{{ t('role') }}</dt>
               <dd>{{ roleLabel(device.role) }}</dd>
             </div>
 
             <div>
-              <dt>Последно видян</dt>
+              <dt>{{ t('lastSeen') }}</dt>
               <dd>{{ formatLastSeen(device.last_seen_at) }}</dd>
             </div>
 
             <div v-if="inventoryValue(device, 'model')">
-              <dt>Модел</dt>
+              <dt>{{ t('model') }}</dt>
               <dd>{{ inventoryValue(device, 'model') }}</dd>
             </div>
 
             <div v-if="inventoryValue(device, 'operating_system')">
-              <dt>Операционна система</dt>
+              <dt>{{ t('os') }}</dt>
               <dd>
                 {{ inventoryValue(device, 'operating_system') }}
                 {{ inventoryValue(device, 'operating_system_version') }}
@@ -152,7 +156,7 @@
             </div>
 
             <div v-if="inventoryValue(device, 'architecture')">
-              <dt>Архитектура</dt>
+              <dt>{{ t('architecture') }}</dt>
               <dd>{{ inventoryValue(device, 'architecture') }}</dd>
             </div>
 
@@ -163,7 +167,7 @@
           </dl>
 
           <details v-if="device.latest_inventory" class="inventory-details">
-            <summary>Информация за устройството</summary>
+            <summary>{{ t('inventory') }}</summary>
 
             <dl class="inventory-grid">
               <div v-if="inventoryValue(device, 'hostname')">
@@ -178,7 +182,7 @@
 
               <div v-if="inventoryValue(device, 'logical_cpu_count')">
                 <dt>CPU</dt>
-                <dd>{{ inventoryValue(device, 'logical_cpu_count') }} cores</dd>
+                <dd>{{ inventoryValue(device, 'logical_cpu_count') }} {{ t('cores') }}</dd>
               </div>
 
               <div v-if="memoryLabel(device)">
@@ -187,12 +191,12 @@
               </div>
 
               <div v-if="diskLabel(device)">
-                <dt>Disk</dt>
+                <dt>{{ t('disk') }}</dt>
                 <dd>{{ diskLabel(device) }}</dd>
               </div>
 
               <div>
-                <dt>Protocol</dt>
+                <dt>{{ t('protocol') }}</dt>
                 <dd>{{ device.protocol_version }}</dd>
               </div>
             </dl>
@@ -201,7 +205,7 @@
   class="device-detail-link"
   :href="`/fleet/device?id=${encodeURIComponent(device.device_id)}`"
 >
-  Детайли →
+  {{ t('details') }}
 </a>
         </article>
       </div>
@@ -211,6 +215,10 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useFleetApi, useFleetText } from './fleet-ui'
+
+const { requestJson } = useFleetApi()
+const { t, formatDate, formatLastSeen, deviceStatus } = useFleetText()
 
 interface PendingRequest {
   request_id: number
@@ -247,114 +255,11 @@ const loading = ref(false)
 
 const busyRequest = ref<number | null>(null)
 const error = ref('')
+const pendingError = ref(false)
+const devicesError = ref(false)
 
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
-
-function authHeaders(): HeadersInit {
-  const token = localStorage.getItem('authToken') || ''
-
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  }
-}
-
-let backendUrlPromise: Promise<string> | undefined
-
-function normalizeBaseUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '')
-}
-
-async function getBackendUrl(): Promise<string> {
-  if (backendUrlPromise) {
-    return backendUrlPromise
-  }
-
-  backendUrlPromise = (async () => {
-    try {
-      const response = await fetch('/runtime-config.json', {
-        cache: 'no-store',
-      })
-
-      if (response.ok) {
-        const config = await response.json()
-
-        if (
-          typeof config?.backend_url === 'string' &&
-          config.backend_url.trim()
-        ) {
-          return normalizeBaseUrl(config.backend_url)
-        }
-
-        if (
-          Number.isInteger(config?.backend_port) &&
-          config.backend_port > 0 &&
-          config.backend_port <= 65535
-        ) {
-          return `${window.location.protocol}//${window.location.hostname}:${config.backend_port}`
-        }
-      }
-    } catch {
-      // Continue with normal fallback.
-    }
-
-    try {
-      const override = localStorage.getItem(
-        'mm_backend_url_override',
-      )
-
-      if (override !== null) {
-        return normalizeBaseUrl(override)
-      }
-    } catch {
-      // Ignore unavailable localStorage.
-    }
-
-    return `${window.location.protocol}//${window.location.hostname}:8887`
-  })()
-
-  return backendUrlPromise
-}
-
-
-async function requestJson<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const baseUrl = await getBackendUrl()
-  const url = `${baseUrl}${path}`
-
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...authHeaders(),
-      ...(options.headers || {}),
-    },
-  })
-
-  if (!response.ok) {
-    let detail = ''
-
-    try {
-      const body = await response.json()
-
-      if (typeof body?.detail === 'string') {
-        detail = `: ${body.detail}`
-      }
-    } catch {
-      // Response may not be JSON.
-    }
-
-    throw new Error(`HTTP ${response.status}${detail}`)
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-
-  return await response.json() as T
-}
 
 async function loadPending() {
   if (loadingPending.value || disposed) return
@@ -362,9 +267,12 @@ async function loadPending() {
   loadingPending.value = true
 
   try {
-    pending.value = await requestJson<PendingRequest[]>(
+    const result = await requestJson<PendingRequest[]>(
       '/api/v1/pairing/requests?after_id=0&limit=50',
     )
+    if (!disposed) { pending.value = result; pendingError.value = false }
+  } catch {
+    if (!disposed) pendingError.value = true
   } finally {
     loadingPending.value = false
   }
@@ -377,7 +285,9 @@ async function loadDevices() {
 
   try {
     const result = await requestJson<DeviceResponse>('/api/v1/devices')
-    devices.value = result.items
+    if (!disposed) { devices.value = result.items; devicesError.value = false }
+  } catch {
+    if (!disposed) devicesError.value = true
   } finally {
     loadingDevices.value = false
   }
@@ -387,17 +297,12 @@ async function refreshAll() {
   if (loading.value || disposed) return
 
   loading.value = true
-  error.value = ''
 
   try {
-    await Promise.all([
+    await Promise.allSettled([
       loadPending(),
       loadDevices(),
     ])
-  } catch (reason) {
-  error.value = reason instanceof Error
-    ? `Неуспешно зареждане на Fleet данните: ${reason.message}`
-    : 'Неуспешно зареждане на Fleet данните.'
   } finally {
     loading.value = false
   }
@@ -407,7 +312,7 @@ async function decide(
   item: PendingRequest,
   action: 'approve' | 'reject',
 ) {
-  if (busyRequest.value !== null) return
+  if (busyRequest.value !== null || disposed) return
 
   busyRequest.value = item.request_id
   error.value = ''
@@ -420,13 +325,10 @@ async function decide(
       },
     )
 
-    await refreshAll()
+    if (!disposed) await refreshAll()
   } catch {
     await refreshAll()
-
-    error.value = action === 'approve'
-      ? 'Устройството не можа да бъде одобрено.'
-      : 'Заявката не можа да бъде отхвърлена.'
+    if (!disposed) error.value = t('decisionFailed')
   } finally {
     busyRequest.value = null
   }
@@ -437,42 +339,6 @@ function roleLabel(role: string): string {
   if (role === 'hub') return 'Hub'
   if (role === 'standalone') return 'Standalone'
   return role
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return '—'
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return value
-
-  return date.toLocaleString('bg-BG')
-}
-
-function formatLastSeen(value: string | null): string {
-  if (!value) return 'Никога'
-
-  const time = new Date(value).getTime()
-
-  if (Number.isNaN(time)) return value
-
-  const seconds = Math.max(
-    0,
-    Math.floor((Date.now() - time) / 1000),
-  )
-
-  if (seconds < 10) return 'сега'
-  if (seconds < 60) return `преди ${seconds} сек.`
-
-  const minutes = Math.floor(seconds / 60)
-
-  if (minutes < 60) return `преди ${minutes} мин.`
-
-  const hours = Math.floor(minutes / 60)
-
-  if (hours < 24) return `преди ${hours} ч.`
-
-  return formatDate(value)
 }
 
 function inventoryValue(
@@ -517,7 +383,7 @@ function diskLabel(device: DeviceItem): string {
   if (!total) return ''
 
   return free
-    ? `${free} свободни / ${total}`
+    ? t('freeDisk', { free, total })
     : total
 }
 
@@ -713,6 +579,9 @@ button:disabled {
 .status-dot.offline {
   background: #6b7280;
 }
+
+.status-dot.revoked { background: var(--error-color, #ef4444); }
+.revoked-badge { color: var(--error-color, #ef4444); border: 1px solid currentColor; }
 
 .status-badge {
   border-radius: 999px;
