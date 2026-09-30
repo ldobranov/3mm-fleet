@@ -1,0 +1,62 @@
+name: Release 3mm Fleet
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches VERSION
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+
+          echo "Tag version:  $TAG_VERSION"
+          echo "File version: $FILE_VERSION"
+
+          if [ "$TAG_VERSION" != "$FILE_VERSION" ]; then
+            echo "ERROR: tag does not match VERSION"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build Fleet package
+        run: python build_fleet_package.py
+
+      - name: Create checksum
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "3mm-fleet-${GITHUB_REF_NAME#v}.zip" \
+            > "3mm-fleet-${GITHUB_REF_NAME#v}.zip.sha256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/3mm-fleet-${VERSION}.zip" \
+            "dist/3mm-fleet-${VERSION}.zip.sha256" \
+            --title "3mm Fleet ${GITHUB_REF_NAME}" \
+            --generate-notes
