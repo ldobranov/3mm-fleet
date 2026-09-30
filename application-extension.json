@@ -48,15 +48,27 @@
     }
   ],
 
-  "routes": [
-    {
-      "route_id": "fleet",
-      "entrypoint_id": "fleet",
-      "audience": "administrator",
-      "required_permissions": ["fleet_manage"],
-      "order": 20
-    }
-  ],
+"routes": [
+  {
+    "route_id": "fleet",
+    "entrypoint_id": "fleet",
+    "audience": "administrator",
+    "required_permissions": [
+      "fleet_manage"
+    ],
+    "order": 20
+  },
+  {
+    "route_id": "device",
+    "entrypoint_id": "device",
+    "audience": "administrator",
+    "required_permissions": [
+      "fleet_manage"
+    ],
+    "navigation": false,
+    "order": 21
+  }
+],
 
   "event_subscriptions": [],
   "connectors": [],

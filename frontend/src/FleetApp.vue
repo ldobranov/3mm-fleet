@@ -197,6 +197,12 @@
               </div>
             </dl>
           </details>
+<a
+  class="device-detail-link"
+  :href="`/fleet/device?id=${encodeURIComponent(device.device_id)}`"
+>
+  Детайли →
+</a>
         </article>
       </div>
     </section>
@@ -608,6 +614,17 @@ onUnmounted(() => {
 .device-main strong {
   display: block;
   font-size: 1.05rem;
+}
+.device-detail-link {
+  display: inline-block;
+  margin-top: 1rem;
+  color: var(--primary-color, #3b82f6);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.device-detail-link:hover {
+  text-decoration: underline;
 }
 
 code {
