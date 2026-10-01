@@ -4,6 +4,7 @@ import DeviceDetail from '../frontend/src/DeviceDetail.vue'
 import FleetApp from '../frontend/src/FleetApp.vue'
 import CapabilityControl from '../frontend/src/CapabilityControl.vue'
 import GpioConfiguration from '../frontend/src/GpioConfiguration.vue'
+import NodeUpdateControl from '../frontend/src/NodeUpdateControl.vue'
 
 let wrapper: ReturnType<typeof mount> | undefined
 let moduleStatus = 'succeeded'
@@ -170,6 +171,37 @@ it('validates pulse duration before queuing', async () => {
   expect(transport.queued()).toBeUndefined()
 })
 
+it('reports pending physical commands to its parent', async () => {
+  const transport = capabilityTransport()
+
+  wrapper = mount(CapabilityControl, {
+    props: controlProps,
+  })
+
+  await flushPromises()
+
+  await wrapper.find('input[type="checkbox"]').setValue(true)
+  await controlButton('Switch on').trigger('click')
+  await flushPromises()
+
+  expect(
+    wrapper.emitted('pending-change')?.some(
+      event => event[0] === true,
+    ),
+  ).toBe(true)
+
+  transport.finish('succeeded')
+
+  await vi.advanceTimersByTimeAsync(10000)
+  await flushPromises()
+
+  expect(
+    wrapper.emitted('pending-change')?.some(
+      event => event[0] === false,
+    ),
+  ).toBe(true)
+})
+
 function gpioConfigurationTransport(blocking = false) {
   let queued: Record<string, any> | undefined
   let status = 'queued'
@@ -208,4 +240,377 @@ it('refuses pin changes while any GPIO module is enabled', async () => {
   expect(controlButton('Apply output configuration').attributes('disabled')).toBeDefined()
   expect(wrapper.text()).toContain('org.generic.output')
   expect(transport.queued()).toBeUndefined()
+})
+
+
+const otaOperationId = `nodeupd_${'a'.repeat(32)}`
+const otaReleaseId = 'v0.3.0-beta.26'
+const otaSha = 'b'.repeat(64)
+
+function otaResponse(data: unknown, status = 200) {
+  return Promise.resolve({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(data),
+  })
+}
+
+function otaStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    operation_id: otaOperationId,
+    device_id: 'dev_test',
+    release_id: otaReleaseId,
+    archive_sha256: otaSha,
+    archive_size_bytes: 1024 * 1024,
+    state: 'prepared',
+    command_id: 'cmd_prepare',
+    command_status: 'succeeded',
+    hub_prepared_at: new Date().toISOString(),
+    hub_expires_at: new Date(Date.now() + 600000).toISOString(),
+    agent_prepared_at: new Date().toISOString(),
+    error: null,
+    apply_command_id: null,
+    apply_command_status: null,
+    installation: null,
+    ...overrides,
+  }
+}
+
+it('prepares, requires explicit confirmation, installs, and waits for final succeeded outcome', async () => {
+  let prepared = false
+  let applied = false
+
+  const fetcher = vi.fn(
+    (url: string, options: RequestInit = {}) => {
+      if (
+        options.method === 'POST' &&
+        url.endsWith('/node-updates/prepare')
+      ) {
+        prepared = true
+
+        return otaResponse(
+          {
+            prepared: {
+              operation_id: otaOperationId,
+              device_id: 'dev_test',
+              release_id: otaReleaseId,
+              archive_sha256: otaSha,
+              archive_size_bytes: 1024 * 1024,
+              prepared_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 600000).toISOString(),
+            },
+            version: '0.3.0-beta.26',
+            channel: 'beta',
+            command_id: 'cmd_prepare',
+            command_status: 'queued',
+          },
+          202,
+        )
+      }
+
+	  if (url.includes('/commands?limit=200')) {
+	    return otaResponse({
+		  items: [],
+	    })
+	  }
+
+      if (
+        options.method === 'POST' &&
+        url.endsWith(`/${otaOperationId}/apply`)
+      ) {
+        applied = true
+
+        expect(JSON.parse(options.body as string)).toEqual({
+          confirmed_install: true,
+        })
+
+        return otaResponse(
+          {
+            operation_id: otaOperationId,
+            command_id: 'cmd_apply',
+            command_status: 'queued',
+            expires_at: new Date(Date.now() + 120000).toISOString(),
+            installation: null,
+          },
+          202,
+        )
+      }
+
+      if (
+        url.endsWith(
+          `/devices/dev_test/node-updates/${otaOperationId}`,
+        )
+      ) {
+        expect(prepared).toBe(true)
+
+        return otaResponse(
+          otaStatus(
+            applied
+              ? {
+                  apply_command_id: 'cmd_apply',
+                  apply_command_status: 'succeeded',
+                  installation: {
+                    operation_id: otaOperationId,
+                    device_id: 'dev_test',
+                    release_id: otaReleaseId,
+                    archive_sha256: otaSha,
+                    status: 'succeeded',
+                    updated_at: new Date().toISOString(),
+                    previous_release_id: 'v0.3.0-beta.25',
+                    error_code: null,
+                  },
+                }
+              : {},
+          ),
+        )
+      }
+
+      return otaResponse({}, 404)
+    },
+  )
+
+  vi.stubGlobal('fetch', fetcher)
+
+  wrapper = mount(NodeUpdateControl, {
+    props: {
+      deviceId: 'dev_test',
+      disabled: false,
+    },
+  })
+
+  await flushPromises()
+
+  await controlButton('Prepare update').trigger('click')
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Ready to install')
+
+  const installButton = controlButton('Install')
+  expect(installButton.attributes('disabled')).toBeDefined()
+
+  await wrapper.find('input[type="checkbox"]').setValue(true)
+
+  expect(installButton.attributes('disabled')).toBeUndefined()
+
+  await installButton.trigger('click')
+  await flushPromises()
+
+  expect(wrapper.text()).toContain(
+    'Update completed successfully',
+  )
+
+  expect(
+    fetcher.mock.calls.filter(
+      ([, options]) => options?.method === 'POST',
+    ),
+  ).toHaveLength(2)
+})
+
+it('recovers a lost install reply after reload without sending install again', async () => {
+  let applied = false
+  let installationStatus: 'running' | 'succeeded' = 'running'
+  let applyPosts = 0
+
+  const fetcher = vi.fn(
+    (url: string, options: RequestInit = {}) => {
+      if (url.includes('/commands?limit=200')) {
+        return otaResponse({
+          items: [],
+        })
+      }
+
+      if (
+        options.method === 'POST' &&
+        url.endsWith('/node-updates/prepare')
+      ) {
+        return otaResponse(
+          {
+            prepared: {
+              operation_id: otaOperationId,
+              device_id: 'dev_test',
+              release_id: otaReleaseId,
+              archive_sha256: otaSha,
+              archive_size_bytes: 1024 * 1024,
+              prepared_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + 600000).toISOString(),
+            },
+            version: '0.3.0-beta.26',
+            channel: 'beta',
+            command_id: 'cmd_prepare',
+            command_status: 'queued',
+          },
+          202,
+        )
+      }
+
+      if (
+        options.method === 'POST' &&
+        url.endsWith(`/${otaOperationId}/apply`)
+      ) {
+        applyPosts += 1
+        applied = true
+
+        return Promise.reject(
+          new TypeError('Lost install response'),
+        )
+      }
+
+      if (
+        url.endsWith(
+          `/devices/dev_test/node-updates/${otaOperationId}`,
+        )
+      ) {
+        return otaResponse(
+          otaStatus(
+            applied
+              ? {
+                  apply_command_id: 'cmd_apply',
+                  apply_command_status: 'delivered',
+                  installation: {
+                    operation_id: otaOperationId,
+                    device_id: 'dev_test',
+                    release_id: otaReleaseId,
+                    archive_sha256: otaSha,
+                    status: installationStatus,
+                    updated_at: new Date().toISOString(),
+                    previous_release_id: 'v0.3.0-beta.25',
+                    error_code: null,
+                  },
+                }
+              : {},
+          ),
+        )
+      }
+
+      return otaResponse({}, 404)
+    },
+  )
+
+  vi.stubGlobal('fetch', fetcher)
+
+  wrapper = mount(NodeUpdateControl, {
+    props: {
+      deviceId: 'dev_test',
+      disabled: false,
+    },
+  })
+
+  await flushPromises()
+
+  await controlButton('Prepare update').trigger('click')
+  await flushPromises()
+
+  await wrapper.find('input[type="checkbox"]').setValue(true)
+  await controlButton('Install').trigger('click')
+  await flushPromises()
+
+  expect(applyPosts).toBe(1)
+
+  wrapper.unmount()
+
+  wrapper = mount(NodeUpdateControl, {
+    props: {
+      deviceId: 'dev_test',
+      disabled: false,
+    },
+  })
+
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Installing')
+
+  installationStatus = 'succeeded'
+
+  await vi.advanceTimersByTimeAsync(10000)
+  await flushPromises()
+
+  expect(wrapper.text()).toContain(
+    'Update completed successfully',
+  )
+
+  expect(applyPosts).toBe(1)
+})
+
+it('recovers a lost prepare reply without sending prepare again', async () => {
+  let preparePosted = false
+  let preparePosts = 0
+
+  const fetcher = vi.fn(
+    (url: string, options: RequestInit = {}) => {
+      if (url.includes('/commands?limit=200')) {
+        return otaResponse({
+          items: preparePosted
+            ? [
+                {
+                  command_id: 'cmd_prepare_recovered',
+                  command_type: 'agent.update.prepare',
+                  idempotency_key:
+                    `node-update-prepare:${otaOperationId}`,
+                },
+              ]
+            : [],
+        })
+      }
+
+      if (
+        options.method === 'POST' &&
+        url.endsWith('/node-updates/prepare')
+      ) {
+        preparePosts += 1
+        preparePosted = true
+
+        return Promise.reject(
+          new TypeError('Lost prepare response'),
+        )
+      }
+
+      if (
+        url.endsWith(
+          `/devices/dev_test/node-updates/${otaOperationId}`,
+        )
+      ) {
+        return otaResponse(
+          otaStatus({
+            command_id: 'cmd_prepare_recovered',
+            command_status: 'succeeded',
+            state: 'prepared',
+          }),
+        )
+      }
+
+      return otaResponse({}, 404)
+    },
+  )
+
+  vi.stubGlobal('fetch', fetcher)
+
+  wrapper = mount(NodeUpdateControl, {
+    props: {
+      deviceId: 'dev_test',
+      disabled: false,
+    },
+  })
+
+  await flushPromises()
+
+  await controlButton('Prepare update').trigger('click')
+  await flushPromises()
+
+  expect(preparePosts).toBe(1)
+
+  expect(wrapper.text()).toContain(
+    'Ready to install',
+  )
+
+  expect(
+    localStorage.getItem(
+      'fleet:node-update:dev_test',
+    ),
+  ).toBe(otaOperationId)
+
+  expect(
+    localStorage.getItem(
+      'fleet:node-update-prepare:dev_test',
+    ),
+  ).toBeNull()
 })

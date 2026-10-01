@@ -165,9 +165,36 @@
       </section>
 
     </template>
-    <GpioConfiguration v-if="device" :device-id="deviceId"
-      :disabled="!device.online || Boolean(device.revoked_at) || Boolean(error) || busyModule !== null || Object.keys(pendingOperations).length > 0"
-      @pending-change="gpioBusy = $event" @completed="refresh" />
+    <NodeUpdateControl
+      v-if="device && device.role === 'node'"
+      :device-id="deviceId"
+      :disabled="
+        !device.online ||
+        Boolean(device.revoked_at) ||
+        Boolean(error) ||
+        gpioBusy ||
+        capabilityBusy() ||
+        busyModule !== null ||
+        Object.keys(pendingOperations).length > 0
+      "
+      @pending-change="nodeUpdateBusy = $event"
+      @completed="refresh"
+    />
+
+    <GpioConfiguration
+      v-if="device"
+      :device-id="deviceId"
+      :disabled="
+        !device.online ||
+        Boolean(device.revoked_at) ||
+        Boolean(error) ||
+        nodeUpdateBusy ||
+        busyModule !== null ||
+        Object.keys(pendingOperations).length > 0
+      "
+      @pending-change="gpioBusy = $event"
+      @completed="refresh"
+    />
     <p v-if="device?.revoked_at" class="error" role="status">{{ t('revokedHelp') }}</p>
       <section class="panel">
         <div class="section-header">
@@ -200,8 +227,22 @@
             :device-id="deviceId"
             :capability-id="capability.capability_id"
             :metadata="capability.metadata || {}"
-            :disabled="!device || !device.online || Boolean(device.revoked_at) || Boolean(error) || capabilitiesError || isPending(capability.module_id)"
+            :disabled="
+              !device ||
+              !device.online ||
+              Boolean(device.revoked_at) ||
+              Boolean(error) ||
+              capabilitiesError ||
+              nodeUpdateBusy ||
+              isPending(capability.module_id)
+            "
             @completed="refresh"
+            @pending-change="
+              setCapabilityBusy(
+                capability.capability_id,
+                $event,
+              )
+            "
           />
 
           <details
@@ -400,6 +441,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { FleetHttpError, useFleetApi, useFleetText } from './fleet-ui'
 import CapabilityControl from './CapabilityControl.vue'
 import GpioConfiguration from './GpioConfiguration.vue'
+import NodeUpdateControl from './NodeUpdateControl.vue'
 
 const { requestJson } = useFleetApi()
 const { t, formatDate, formatLastSeen, deviceStatus } = useFleetText()
@@ -478,11 +520,13 @@ const error = ref('')
 const packages = ref<ModulePackage[]>([])
 const busyModule = ref<string | null>(null)
 const gpioBusy = ref(false)
+const nodeUpdateBusy = ref(false)
 const moduleError = ref<'actionUnconfirmed' | 'actionFailed' | ''>('')
 const capabilitiesError = ref(false)
 const commandsError = ref(false)
 const packagesError = ref(false)
 const pendingOperations = ref<Record<string, { commandId: string | null; key: string }>>({})
+const pendingCapabilities = ref<Record<string, boolean>>({})
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
@@ -493,13 +537,44 @@ function statusLabel(status: string) {
   return key ? t(key) : status
 }
 
+function setCapabilityBusy(
+  capabilityId: string,
+  value: boolean,
+) {
+  const next = {
+    ...pendingCapabilities.value,
+  }
+
+  if (value) {
+    next[capabilityId] = true
+  } else {
+    delete next[capabilityId]
+  }
+
+  pendingCapabilities.value = next
+}
+
+function capabilityBusy(): boolean {
+  return Object.keys(
+    pendingCapabilities.value,
+  ).length > 0
+}
+
 function isPending(moduleId: string) {
   if (moduleId in pendingOperations.value) return true
   return device.value?.modules.some(item => item.module_id === moduleId && ['queued', 'delivered'].includes(item.status)) === true
 }
 
 function actionsDisabled(moduleId: string) {
-  return loading.value || gpioBusy.value || busyModule.value !== null || isPending(moduleId) || Boolean(device.value?.revoked_at) || Boolean(error.value)
+  return (
+    loading.value ||
+    gpioBusy.value ||
+    nodeUpdateBusy.value ||
+    busyModule.value !== null ||
+    isPending(moduleId) ||
+    Boolean(device.value?.revoked_at) ||
+    Boolean(error.value)
+  )
 }
 
 function operationStatus(module: DeviceModule) {

@@ -35,6 +35,10 @@ class FleetPackageBuildTests(unittest.TestCase):
                 names,
             )
             self.assertIn("source/frontend/FleetApp.vue", names)
+            self.assertIn(
+                "source/frontend/NodeUpdateControl.vue",
+                names,
+            )
 
     def test_package_identity_is_consistent(self):
         version = build_fleet_package.read_version()

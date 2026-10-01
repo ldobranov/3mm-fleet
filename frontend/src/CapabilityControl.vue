@@ -53,7 +53,10 @@ const props = defineProps<{
   metadata: Record<string, unknown>
   disabled: boolean
 }>()
-const emit = defineEmits<{ completed: [] }>()
+const emit = defineEmits<{
+  completed: []
+  'pending-change': [value: boolean]
+}>()
 const { requestJson } = useFleetApi()
 const { t, formatDate } = useFleetText()
 type Snapshot = { values: Record<string, string | number | boolean>; observed_at: string }
@@ -80,7 +83,7 @@ watch(channels, items => { if (!items.includes(channel.value)) channel.value = i
 const validDuration = computed(() => Number.isInteger(duration.value) && duration.value >= 50 && duration.value <= 10000)
 const stale = computed(() => !snapshot.value || !Number.isFinite(Date.parse(snapshot.value.observed_at)) || now.value - Date.parse(snapshot.value.observed_at) > 90000)
 const blocked = computed(() => props.disabled || !confirmed.value || Boolean(pending.value) || Boolean(stateError.value) || stale.value || !channels.value.includes(channel.value))
-
+watch( pending, value => emit('pending-change', Boolean(value)), { immediate: true }, )
 function savePending(value: Pending | null) {
   // Persist intent before POST; a page reload must not silently unlock uncertain I/O.
   if (value) localStorage.setItem(storageKey, JSON.stringify(value))
@@ -171,7 +174,15 @@ onMounted(() => {
   } catch { pending.value = { key: '', commandId: null }; uncertain.value = true }
   void poll()
 })
-onUnmounted(() => { disposed = true; if (timer) clearTimeout(timer) })
+onUnmounted(() => {
+  disposed = true
+  emit('pending-change', false)
+
+  if (timer) {
+    clearTimeout(timer)
+  }
+})
+
 </script>
 
 <style scoped>
