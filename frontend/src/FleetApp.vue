@@ -201,12 +201,15 @@
               </div>
             </dl>
           </details>
-<a
-  class="device-detail-link"
-  :href="`/fleet/device?id=${encodeURIComponent(device.device_id)}`"
->
-  {{ t('details') }}
-</a>
+          <router-link
+            class="device-detail-link"
+            :to="{
+              path: '/fleet/device',
+              query: { id: device.device_id },
+            }"
+          >
+            {{ t('details') }}
+          </router-link>
         </article>
       </div>
     </section>

@@ -61,6 +61,14 @@ class FleetPackageBuildTests(unittest.TestCase):
         self.assertEqual(application["version"], version)
         self.assertEqual(compiled_ui["version"], version)
 
+        routes = {
+            route["route_id"]: route
+            for route in application["routes"]
+        }
+
+        self.assertFalse(routes["fleet"]["navigation"])
+        self.assertFalse(routes["device"]["navigation"])
+
 
 if __name__ == "__main__":
     unittest.main()

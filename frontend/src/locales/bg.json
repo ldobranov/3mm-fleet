@@ -70,5 +70,12 @@
   "nodeUpdateDoNotRetry": "Операцията е активна. Не я стартирайте повторно.",
   "nodeUpdateBlocked": "Core блокира операцията. Проверете дали Node е онлайн, доверяването е настроено и няма активни хардуерни команди.",
   "nodeUpdateMissing": "Операцията за актуализация вече не е налична.",
-  "nodeUpdateRequestFailed": "Неуспешна комуникация с Core. Проверете статуса преди нов опит."
+  "nodeUpdateRequestFailed": "Неуспешна комуникация с Core. Проверете статуса преди нов опит.",
+  "nodeUpdateCurrent": "Текуща версия",
+  "nodeUpdateLatest": "Последна Beta",
+  "nodeUpdateUpToDate": "Актуална",
+  "nodeUpdateAvailable": "Налична актуализация",
+  "nodeUpdateCurrentUnknown": "Неизвестна",
+  "nodeUpdateCheck": "Провери за актуализация",
+  "nodeUpdateChecking": "Проверка…"
 }

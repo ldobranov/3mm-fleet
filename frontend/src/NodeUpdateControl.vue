@@ -7,17 +7,37 @@
       </div>
 
       <span
-        v-if="status"
+        v-if="status || idleStatusText"
         class="update-status"
-        :class="statusClass"
+        :class="status ? statusClass : idleStatusClass"
       >
-        {{ statusText }}
+        {{ status ? statusText : idleStatusText }}
       </span>
     </div>
 
     <p v-if="error" class="error" role="alert">
       {{ error }}
     </p>
+
+    <div
+      v-if="updateCheck && !status"
+      class="update-info"
+    >
+      <div>
+        <span>{{ t('nodeUpdateCurrent') }}</span>
+        <strong>
+          {{
+            updateCheck.current_release_id ||
+            t('nodeUpdateCurrentUnknown')
+          }}
+        </strong>
+      </div>
+
+      <div>
+        <span>{{ t('nodeUpdateLatest') }}</span>
+        <strong>{{ updateCheck.latest_release_id }}</strong>
+      </div>
+    </div>
 
     <div v-if="status" class="update-info">
       <div>
@@ -72,6 +92,24 @@
     </div>
 
     <div class="actions">
+
+      <button
+        v-if="!operationId"
+        type="button"
+        :disabled="
+          disabled ||
+          actionBusy ||
+          checkingForUpdate
+        "
+        @click="refreshUpdateCheck"
+      >
+        {{
+          checkingForUpdate
+            ? t('nodeUpdateChecking')
+            : t('nodeUpdateCheck')
+        }}
+      </button>
+
       <button
         v-if="canPrepare"
         type="button"
@@ -208,6 +246,14 @@ interface ApplyResponse {
   installation: NodeUpdateOperation | null
 }
 
+interface NodeUpdateCheckResponse {
+  current_release_id: string | null
+  latest_release_id: string
+  latest_version: string
+  channel: string
+  update_available: boolean | null
+}
+
 interface CommandHistoryItem {
   command_id: string
   command_type: string
@@ -244,6 +290,8 @@ const error = ref('')
 const applyUncertain = ref(false)
 const prepareIntent = ref<PrepareIntent | null>(null)
 const prepareUncertain = ref(false)
+const updateCheck = ref<NodeUpdateCheckResponse | null>(null)
+const checkingForUpdate = ref(false)
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
@@ -265,6 +313,42 @@ const finalOutcome = computed(() =>
     installationStatus.value || '',
   ),
 )
+
+const updateAvailable = computed(
+  () => updateCheck.value?.update_available === true,
+)
+
+const idleStatusText = computed(() => {
+  if (checkingForUpdate.value) {
+    return t('nodeUpdateChecking')
+  }
+
+  if (!updateCheck.value) {
+    return ''
+  }
+
+  if (updateCheck.value.update_available === null) {
+    return t('nodeUpdateCurrentUnknown')
+  }
+
+  return updateCheck.value.update_available
+    ? t('nodeUpdateAvailable')
+    : t('nodeUpdateUpToDate')
+})
+
+const idleStatusClass = computed(() => {
+  if (checkingForUpdate.value) {
+    return 'preparing'
+  }
+
+  if (updateCheck.value?.update_available === null) {
+    return 'unknown'
+  }
+
+  return updateAvailable.value
+    ? 'available'
+    : 'succeeded'
+})
 
 const operationPending = computed(() => {
   if (prepareUncertain.value) return true
@@ -311,6 +395,12 @@ const canInstall = computed(
 
 const canPrepare = computed(() => {
   if (prepareUncertain.value) return false
+  if (!updateCheck.value) return false
+
+  if (updateCheck.value.update_available === false) {
+    return false
+  }
+
   if (!status.value) return true
 
   if (
@@ -467,6 +557,36 @@ function savePrepareIntent(value: PrepareIntent | null) {
     )
   } else {
     localStorage.removeItem(prepareIntentKey.value)
+  }
+}
+
+async function refreshUpdateCheck() {
+  if (
+    checkingForUpdate.value ||
+    disposed
+  ) {
+    return
+  }
+
+  checkingForUpdate.value = true
+
+  try {
+    const result = await requestJson<NodeUpdateCheckResponse>(
+      `/api/v1/devices/${encodeURIComponent(props.deviceId)}` +
+        '/node-updates/check?channel=beta',
+    )
+
+    if (!disposed) {
+      updateCheck.value = result
+    }
+  } catch {
+    if (!disposed) {
+      updateCheck.value = null
+    }
+  } finally {
+    if (!disposed) {
+      checkingForUpdate.value = false
+    }
   }
 }
 
@@ -695,6 +815,8 @@ async function refreshStatus() {
     if (
       result.installation?.status === 'succeeded'
     ) {
+      clearOperation()
+      await refreshUpdateCheck()
       emit('completed')
     }
   } catch (reason) {
@@ -774,7 +896,7 @@ onMounted(() => {
       prepareUncertain.value = true
     }
   }
-
+  void refreshUpdateCheck()
   if (prepareUncertain.value) {
     void recoverPrepare()
   }
@@ -840,7 +962,8 @@ onUnmounted(() => {
 .update-status.queued,
 .update-status.preparing,
 .update-status.accepted,
-.update-status.running {
+.update-status.running,
+.update-status.available {
   color: #f59e0b;
 }
 

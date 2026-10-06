@@ -6,6 +6,35 @@ Core owns device identities, enrollment, credentials, heartbeat, inventory,
 capabilities, command delivery and Node update state. Fleet does not create a
 second registry or duplicate Core state.
 
+## Version 0.1.10
+
+- Fleet uses the Core capability registry v3, including provider identity,
+  registration state and capability availability.
+- Versioned capability commands are pinned to the Core-provided contract
+  version while legacy capabilities keep their existing command behavior.
+- Capability controls respect Core-owned availability state and do not expose
+  controls for capabilities that are not registered.
+- Capability entries are provider-aware, allowing multiple providers to expose
+  the same capability without UI identity collisions.
+
+## Version 0.1.9
+
+- Internal Fleet navigation uses the host SPA router instead of reloading the
+  whole document.
+- Fleet routes no longer add themselves automatically to the main menu.
+- Administrators can add `/fleet` explicitly from Menu settings.
+- Package tests protect the Fleet route navigation policy from regressions.
+
+## Version 0.1.8
+
+- Fleet shows the Core-owned current Node release and latest Beta release.
+- Fleet reports whether a Node update is available without starting a prepare.
+- Fleet does not offer Node prepare when Core reports that the selected release
+  is already installed.
+- Node release state is refreshed after a successful OTA installation.
+- Reloading Fleet after a completed update preserves the correct up-to-date
+  state instead of offering the same release again.
+
 ## Version 0.1.7
 
 - Pending Node approval/rejection and device details with inventory and status.

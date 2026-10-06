@@ -51,6 +51,7 @@ const props = defineProps<{
   deviceId: string
   capabilityId: string
   metadata: Record<string, unknown>
+  contractVersion: string | null
   disabled: boolean
 }>()
 const emit = defineEmits<{
@@ -134,7 +135,7 @@ async function invoke(action: 'set_output' | 'pulse_output', value?: boolean) {
     const command = await requestJson<Command>(`${base}/commands`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ command_type: 'capability.invoke',
-        payload: { capability_id: props.capabilityId, action, arguments: arguments_ },
+        payload: { capability_id: props.capabilityId, action, arguments: arguments_, ...(props.contractVersion ? { contract_version: props.contractVersion } : {}), },
         idempotency_key: key, ttl_seconds: 5 }),
     })
     if (!disposed) savePending({ key, commandId: command.command_id })

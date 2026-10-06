@@ -82,6 +82,43 @@ it('shows revoked and switches the visible text with the host language event', a
   expect(wrapper.text()).toContain('Нови устройства')
 })
 
+it('uses client-side routing for Fleet internal navigation', async () => {
+  wrapper = mount(FleetApp, {
+    global: {
+      stubs: {
+        RouterLink: {
+          props: ['to'],
+          template: '<a class="router-link-stub"><slot /></a>',
+        },
+      },
+    },
+  })
+
+  await flushPromises()
+
+  expect(wrapper.find('.device-detail-link').exists()).toBe(true)
+  expect(wrapper.find('.device-detail-link').attributes('href'))
+    .toBeUndefined()
+  wrapper.unmount()
+
+  wrapper = mount(DeviceDetail, {
+    global: {
+      stubs: {
+        RouterLink: {
+          props: ['to'],
+          template: '<a class="router-link-stub"><slot /></a>',
+        },
+      },
+    },
+  })
+
+  await flushPromises()
+
+  expect(wrapper.find('.back-link').exists()).toBe(true)
+  expect(wrapper.find('.back-link').attributes('href'))
+    .toBeUndefined()
+})
+
 it('aborts hung requests at the deadline and on unmount', async () => {
   const signals: AbortSignal[] = []
   vi.stubGlobal('fetch', vi.fn((_url, options) => new Promise((_resolve, reject) => {
@@ -114,7 +151,7 @@ function capabilityTransport({ lost = false, stale = false, missing = false } = 
   vi.stubGlobal('fetch', fetcher)
   return { fetcher, queued: () => queued, finish: (next: string) => { status = next; value = next === 'succeeded' } }
 }
-const controlProps = { deviceId: 'dev_test', capabilityId: 'generic.digital.control', disabled: false,
+const controlProps = { deviceId: 'dev_test', capabilityId: 'generic.digital.control', contractVersion: null, disabled: false,
   metadata: { automation_channels: 'gpio.output.1', automation_actions: 'set_output,pulse_output' } }
 const controlButton = (text: string) => wrapper!.findAll('button').find(button => button.text() === text)!
 
@@ -126,6 +163,7 @@ it('requires confirmation, uses a five-second unique command, and never shows op
   await controlButton('Switch on').trigger('click'); await flushPromises()
   expect(transport.queued()).toMatchObject({ command_type: 'capability.invoke', ttl_seconds: 5,
     payload: { capability_id: 'generic.digital.control', action: 'set_output', arguments: { channel: 'gpio.output.1', value: true } } })
+  expect(transport.queued()!.payload.contract_version).toBeUndefined()
   expect(transport.queued()!.idempotency_key).toMatch(/^fleet:[0-9a-f]{32}$/)
   expect(wrapper.find('dd').text()).toBe('Off / inactive')
   expect(controlButton('Switch off').attributes('disabled')).toBeDefined()
@@ -134,6 +172,37 @@ it('requires confirmation, uses a five-second unique command, and never shows op
   await vi.advanceTimersByTimeAsync(10000); await flushPromises()
   expect(wrapper.text()).toContain('Confirmed by device')
   expect(wrapper.find('dd').text()).toBe('On / active')
+})
+
+it('pins versioned capability commands to the Core contract version', async () => {
+  const transport = capabilityTransport()
+
+  wrapper = mount(CapabilityControl, {
+    props: {
+      ...controlProps,
+      contractVersion: '1.0',
+    },
+  })
+
+  await flushPromises()
+
+  await wrapper.find('input[type="checkbox"]').setValue(true)
+  await controlButton('Switch on').trigger('click')
+  await flushPromises()
+
+  expect(transport.queued()).toMatchObject({
+    command_type: 'capability.invoke',
+    ttl_seconds: 5,
+    payload: {
+      capability_id: 'generic.digital.control',
+      contract_version: '1.0',
+      action: 'set_output',
+      arguments: {
+        channel: 'gpio.output.1',
+        value: true,
+      },
+    },
+  })
 })
 
 it('retains unknown GPIO intent across reload without replay and requires explicit review to unlock', async () => {
@@ -276,12 +345,82 @@ function otaStatus(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function otaCheck(currentReleaseId: string | null) {
+  return {
+    current_release_id: currentReleaseId,
+    latest_release_id: otaReleaseId,
+    latest_version: otaReleaseId.slice(1),
+    channel: 'beta',
+    update_available:
+      currentReleaseId === null
+        ? null
+        : currentReleaseId !== otaReleaseId,
+  }
+}
+
+it('shows the latest installed release on startup without offering prepare', async () => {
+  const fetcher = vi.fn(
+    (url: string, options: RequestInit = {}) => {
+      if (url.includes('/node-updates/check')) {
+        return otaResponse(
+          otaCheck(otaReleaseId),
+        )
+      }
+
+      if (url.includes('/commands?limit=200')) {
+        return otaResponse({
+          items: [],
+        })
+      }
+
+      return otaResponse({}, 404)
+    },
+  )
+
+  vi.stubGlobal('fetch', fetcher)
+
+  wrapper = mount(NodeUpdateControl, {
+    props: {
+      deviceId: 'dev_test',
+      disabled: false,
+    },
+  })
+
+  await flushPromises()
+
+  expect(wrapper.text()).toContain('Up to date')
+  expect(wrapper.text()).toContain(otaReleaseId)
+
+  expect(
+    wrapper.findAll('button').some(
+      button => button.text() === 'Prepare update',
+    ),
+  ).toBe(false)
+
+  expect(
+    fetcher.mock.calls.filter(
+      ([, options]) => options?.method === 'POST',
+    ),
+  ).toHaveLength(0)
+})
+
 it('prepares, requires explicit confirmation, installs, and waits for final succeeded outcome', async () => {
   let prepared = false
   let applied = false
 
   const fetcher = vi.fn(
     (url: string, options: RequestInit = {}) => {
+
+      if (url.includes('/node-updates/check')) {
+        return otaResponse(
+          otaCheck(
+            applied
+              ? otaReleaseId
+              : 'v0.3.0-beta.25',
+          ),
+        )
+      }
+
       if (
         options.method === 'POST' &&
         url.endsWith('/node-updates/prepare')
@@ -308,11 +447,11 @@ it('prepares, requires explicit confirmation, installs, and waits for final succ
         )
       }
 
-	  if (url.includes('/commands?limit=200')) {
-	    return otaResponse({
-		  items: [],
-	    })
-	  }
+    if (url.includes('/commands?limit=200')) {
+      return otaResponse({
+        items: [],
+      })
+    }
 
       if (
         options.method === 'POST' &&
@@ -395,9 +534,14 @@ it('prepares, requires explicit confirmation, installs, and waits for final succ
   await installButton.trigger('click')
   await flushPromises()
 
-  expect(wrapper.text()).toContain(
-    'Update completed successfully',
-  )
+  expect(wrapper.text()).toContain('Up to date')
+  expect(wrapper.text()).toContain(otaReleaseId)
+
+  expect(
+    localStorage.getItem(
+      'fleet:node-update:dev_test',
+    ),
+  ).toBeNull()
 
   expect(
     fetcher.mock.calls.filter(
@@ -413,6 +557,18 @@ it('recovers a lost install reply after reload without sending install again', a
 
   const fetcher = vi.fn(
     (url: string, options: RequestInit = {}) => {
+      if (url.includes('/node-updates/check')) {
+        return otaResponse(
+          otaCheck(
+            !applied
+              ? 'v0.3.0-beta.25'
+              : installationStatus === 'succeeded'
+                ? otaReleaseId
+                : null,
+          ),
+        )
+      }
+
       if (url.includes('/commands?limit=200')) {
         return otaResponse({
           items: [],
@@ -524,9 +680,14 @@ it('recovers a lost install reply after reload without sending install again', a
   await vi.advanceTimersByTimeAsync(10000)
   await flushPromises()
 
-  expect(wrapper.text()).toContain(
-    'Update completed successfully',
-  )
+  expect(wrapper.text()).toContain('Up to date')
+  expect(wrapper.text()).toContain(otaReleaseId)
+
+  expect(
+    localStorage.getItem(
+      'fleet:node-update:dev_test',
+    ),
+  ).toBeNull()
 
   expect(applyPosts).toBe(1)
 })
@@ -537,6 +698,11 @@ it('recovers a lost prepare reply without sending prepare again', async () => {
 
   const fetcher = vi.fn(
     (url: string, options: RequestInit = {}) => {
+      if (url.includes('/node-updates/check')) {
+        return otaResponse(
+          otaCheck('v0.3.0-beta.25'),
+        )
+      }
       if (url.includes('/commands?limit=200')) {
         return otaResponse({
           items: preparePosted

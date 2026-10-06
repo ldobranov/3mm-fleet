@@ -70,5 +70,12 @@
   "nodeUpdateDoNotRetry": "The operation is active. Do not start it again.",
   "nodeUpdateBlocked": "Core blocked the operation. Check that the Node is online, trust is configured, and no hardware command is active.",
   "nodeUpdateMissing": "The update operation is no longer available.",
-  "nodeUpdateRequestFailed": "Communication with Core failed. Check the status before trying again."
+  "nodeUpdateRequestFailed": "Communication with Core failed. Check the status before trying again.",
+  "nodeUpdateCurrent": "Current version",
+  "nodeUpdateLatest": "Latest Beta",
+  "nodeUpdateUpToDate": "Up to date",
+  "nodeUpdateAvailable": "Update available",
+  "nodeUpdateCurrentUnknown": "Unknown",
+  "nodeUpdateCheck": "Check for update",
+  "nodeUpdateChecking": "Checking…"
 }

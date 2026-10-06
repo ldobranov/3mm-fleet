@@ -2,7 +2,12 @@
   <main class="device-page">
     <header class="page-header">
       <div>
-        <a class="back-link" href="/fleet">{{ t('back') }}</a>
+        <router-link
+          class="back-link"
+          to="/fleet"
+        >
+          {{ t('back') }}
+        </router-link>
 
         <h1>
           {{ device?.display_name || inventoryValue('hostname') || t('device') }}
@@ -214,18 +219,34 @@
 
         <article
           v-for="capability in capabilities"
-          :key="capability.capability_id"
+          :key="capabilityKey(capability)"
           class="list-item"
         >
           <strong>{{ capability.capability_id }}</strong>
 
           <div class="muted">
-            {{ capability.module_id }} · {{ capability.version }}
+            {{ capability.provider_type || 'inventory' }}
+            <template v-if="capability.provider_id">
+              · {{ capability.provider_id }}
+            </template>
+            <template v-if="capability.provider_version">
+              · {{ capability.provider_version }}
+            </template>
+          </div>
+
+          <div
+            v-if="!capability.registered || capability.available === false"
+            class="warning"
+            role="status"
+          >
+            {{ capability.unavailable_reason || 'unavailable' }}
           </div>
 
           <CapabilityControl
+            v-if="capability.registered"
             :device-id="deviceId"
             :capability-id="capability.capability_id"
+            :contract-version="capability.contract_version"
             :metadata="capability.metadata || {}"
             :disabled="
               !device ||
@@ -234,12 +255,13 @@
               Boolean(error) ||
               capabilitiesError ||
               nodeUpdateBusy ||
-              isPending(capability.module_id)
+              capability.available === false ||
+              capabilityModulePending(capability)
             "
             @completed="refresh"
             @pending-change="
               setCapabilityBusy(
-                capability.capability_id,
+                capabilityKey(capability),
                 $event,
               )
             "
@@ -483,9 +505,19 @@ interface DeviceItem {
 
 interface Capability {
   capability_id: string
-  module_id: string
-  version: string
+  provider_type: string | null
+  provider_id: string | null
+  provider_version: string | null
   metadata: Record<string, unknown>
+
+  supported: boolean
+  registered: boolean
+  available: boolean | null
+  unavailable_reason: string | null
+
+  contract_version: string | null
+  contract: Record<string, unknown> | null
+  declaration_digest: string | null
 }
 
 interface Command {
@@ -535,6 +567,22 @@ function statusLabel(status: string) {
   const labels = ['queued', 'delivered', 'succeeded', 'failed', 'expired', 'unknown'] as const
   const key = labels.find(key => key === status)
   return key ? t(key) : status
+}
+
+function capabilityKey(capability: Capability): string {
+  return [
+    capability.capability_id,
+    capability.provider_type || '',
+    capability.provider_id || '',
+  ].join(':')
+}
+
+function capabilityModulePending(capability: Capability): boolean {
+  return (
+    capability.provider_type === 'agent_module' &&
+    Boolean(capability.provider_id) &&
+    isPending(capability.provider_id!)
+  )
 }
 
 function setCapabilityBusy(
@@ -722,7 +770,7 @@ async function refresh() {
       device.value = result
       error.value = ''
     }).catch(() => { if (!disposed) error.value = t('loadFailed') }),
-    requestJson<Capability[]>(`/api/v1/devices/${encodeURIComponent(deviceId)}/capabilities`).then(result => {
+    requestJson<Capability[]>(`/api/v1/devices/${encodeURIComponent(deviceId)}/capabilities?registry_version=3`).then(result => {
       if (!disposed) { capabilities.value = result; capabilitiesError.value = false }
     }).catch(() => { if (!disposed) capabilitiesError.value = true }),
     requestJson<CommandResponse>(`/api/v1/devices/${encodeURIComponent(deviceId)}/commands?limit=200`).then(result => {
